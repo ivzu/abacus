@@ -2170,6 +2170,7 @@ void om_html_print_keykey_entry(FILE *fp, char *key1, char *key2, int num)
 	fprintf(fp, "<td align=\"left\" class=\"valueentry\">");
 	om_html_entities(fp, key1);
 	fprintf(fp, "</td><td align=\"left\" class=\"keyentry\">");
+	/* FIXME - https://  */
 	if (!strncmp(key2, "http://", 7)) {
 		fprintf(fp, "<a class=\"url\" href=\"%s\">", key2);
 		om_html_entities(fp, key2);
@@ -2866,6 +2867,59 @@ void vi_print_generic_keytime_report(FILE *fp, char *title, char *subtitle,
 	free(table);
 }
 
+/* Print a generic report where the two report items are strings
+ * (usually url and date). Used to print the 'googled' and 'referers age'
+ * reports. */
+void vi_print_generic_keytimeval_report(FILE *fp, char *title, char *subtitle,
+		char *info, int maxlines,
+		struct hashtable *ht_dates,
+		struct hashtable *ht_refernums,
+		int(*compar)(const void *, const void *))
+{
+	int items = ht_used(ht_dates), i;
+	void **table;
+	unsigned int idx = 0;
+	int r = 0;
+
+	Output->print_title(fp, title);
+	Output->print_subtitle(fp, subtitle);
+	Output->print_numkey_info(fp, info, items);
+	if ((table = ht_get_array(ht_dates)) == NULL) {
+	    fprintf(stderr, "Out Of Memory in print_generic_keytime_report()\n");
+		return;
+	}
+	qsort(table, items, sizeof(void*)*2, compar);
+	for (i = 0; i < items; i++) {
+		struct tm *tm;
+		char *url = table[i*2];
+		char ftime[1024];
+		char number[1024];
+		char *key = NULL;
+		long val = 0;
+		time_t time = (time_t) table[(i*2)+1];
+
+		if (i >= maxlines) break;
+		tm = localtime(&time);
+		if (tm) {
+			ftime[0] = '\0';
+			number[0] = '\0';
+			strftime(ftime, 1024, "%d/%b/%Y", tm);
+
+			key = (url[0] == '\0') ? "none" : url;
+			r = ht_search(ht_refernums, key, &idx);
+			if (r != HT_NOTFOUND) {
+			    val = (long) ht_value(ht_refernums, idx);
+			    sprintf(number, "  - %ld  ", val);
+			}
+			vi_strlcat(ftime, number, -1);
+			Output->print_keykey_entry(fp, ftime,
+						   url, i+1);
+		}
+	}
+	free(table);
+}
+
+
 void vi_print_googled_report(FILE *fp, struct vih *vih)
 {
 	vi_print_generic_keytime_report(
@@ -2892,25 +2946,27 @@ void vi_print_adsensed_report(FILE *fp, struct vih *vih)
 
 void vi_print_referers_age_report(FILE *fp, struct vih *vih)
 {
-	vi_print_generic_keytime_report(
+	vi_print_generic_keytimeval_report(
 			fp,
 			"Referers by first time",
 			"Referers ordered by first time date, newer on top (referers from google excluded)",
 			"Different referers",
 			Config_max_referers_age,
 			&vih->referersage,
+			&vih->referers,
 			qsort_cmp_time_value);
 }
 
 void vi_print_google_keyphrases_age_report(FILE *fp, struct vih *vih)
 {
-	vi_print_generic_keytime_report(
+	vi_print_generic_keytimeval_report(
 			fp,
 			"Google Keyphrases by first time",
 			"Keyphrases ordered by first time date, newer on top",
 			"Different referers",
 			Config_max_google_keyphrases_age,
 			&vih->googlekeyphrasesage,
+			&vih->googlekeyphrases,
 			qsort_cmp_time_value);
 }
 
